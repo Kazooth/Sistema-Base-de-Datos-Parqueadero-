@@ -4,6 +4,7 @@ import com.parqueadero.parqueadero.dto.EntradaVehiculoDTO;
 import com.parqueadero.parqueadero.dto.EstadisticasDTO;
 import com.parqueadero.parqueadero.repositorio.FacturaRepository;
 import com.parqueadero.parqueadero.servicio.ParqueaderoService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +15,8 @@ public class ParqueaderoController {
 
     private final ParqueaderoService service;
     private final FacturaRepository facturaRepo;
+    @Value("${spa.dev-url:}")
+    private String spaDevUrl;
 
     public ParqueaderoController(ParqueaderoService service, FacturaRepository facturaRepo) {
         this.service = service;
@@ -26,9 +29,20 @@ public class ParqueaderoController {
         return new EntradaVehiculoDTO();
     }
 
-    // Landing principal "/" (home)
+    // Landing principal "/" -> SPA (React)
+    // Si spa.dev-url está configurado (p.ej. http://localhost:5173), redirige al dev server.
+    // Si no, sirve la SPA empacada en static/app/index.html
     @GetMapping("/")
-    public String landing(Model model) {
+    public String landing() {
+        if (spaDevUrl != null && !spaDevUrl.isBlank()) {
+            return "redirect:" + spaDevUrl;
+        }
+        return "forward:/app/index.html";
+    }
+
+    // Antiguo home de Thymeleaf disponible en /home
+    @GetMapping("/home")
+    public String legacyHome(Model model) {
         var vehiculos = service.listarActivos();
         long activos = vehiculos.size();
         long facturas = facturaRepo.count();

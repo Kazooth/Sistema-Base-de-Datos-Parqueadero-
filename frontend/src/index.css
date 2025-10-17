@@ -3,4 +3,5 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-body { @apply bg-slate-50; }
+/* Prefer utility classes in markup; avoid @apply warnings in raw CSS files */
+body { background-color: #f8fafc; /* slate-50 */ }
