@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mapa de Parqueadero</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .grid-container { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; }
+        .spot { border-radius: 10px; padding: 10px; text-align: center; font-weight: 600; cursor: pointer; user-select: none; position: relative; overflow: hidden; }
+        .spot.DISPONIBLE { background: #e6f7ed; color: #0f5132; border: 1px solid #badbcc; }
+        .spot.OCUPADO { background: #fde2e1; color: #842029; border: 1px solid #f5c2c7; }
+        .spot.RESERVADO { background: #e7f1ff; color: #084298; border: 1px solid #b6d4fe; }
+        .spot.MANTENIMIENTO { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+        .legend span { display: inline-block; margin-right: 16px; }
+        .legend .box { width: 14px; height: 14px; display: inline-block; margin-right: 6px; border-radius: 3px; vertical-align: middle; }
+        .icon { font-size: 18px; margin-right: 6px; }
+        .corner { position: absolute; top: 6px; right: 8px; font-size: 14px; opacity:.7 }
+    </style>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+        <a class="navbar-brand" th:href="@{/}">Parqueadero</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item"><a class="nav-link" th:href="@{/index}">Panel</a></li>
+                <li class="nav-item"><a class="nav-link active" th:href="@{/mapa}">Mapa</a></li>
+                <li class="nav-item"><a class="nav-link" th:href="@{/tarifas}">Tarifas</a></li>
+                <li class="nav-item"><a class="nav-link" th:href="@{/reportes}">Reportes</a></li>
+            </ul>
+        </div>
+    </div>
+    </nav>
+
+<main class="container py-4" x-data="parkingMap()" x-init="init()">
+    <div class="d-flex align-items-end justify-content-between mb-3">
+        <div>
+            <h2 class="mb-1">Mapa de Parqueadero</h2>
+            <p class="text-secondary mb-0">Estados en tiempo casi real. Da clic en un puesto para ver detalles.</p>
+        </div>
+        <div class="legend small">
+            <span><i class="box" style="background:#e6f7ed;border:1px solid #badbcc"></i>Disponible</span>
+            <span><i class="box" style="background:#fde2e1;border:1px solid #f5c2c7"></i>Ocupado</span>
+            <span><i class="box" style="background:#e7f1ff;border:1px solid #b6d4fe"></i>Reservado</span>
+            <span><i class="box" style="background:#fff3cd;border:1px solid #ffecb5"></i>Mantenimiento</span>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label class="form-label">Filtrar por tipo</label>
+            <select class="form-select" x-model="filtroTipo">
+                <option value="">Todos</option>
+                <option value="CARRO">Carro</option>
+                <option value="MOTO">Moto</option>
+                <option value="ELECTRICO">Eléctrico</option>
+                <option value="GRANDE">Grande</option>
+                <option value="DISCAPACIDAD">Discapacidad</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Buscar por código</label>
+            <input class="form-control" placeholder="Ej: A1" x-model="busqueda">
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+            <button class="btn btn-outline-primary me-2" @click="refrescar()">Refrescar</button>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="auto" x-model="autoRefresh">
+                <label class="form-check-label" for="auto">Auto-actualizar</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <template x-for="s in spotsFiltrados()" :key="s.id">
+            <div class="spot" :class="s.estado" @click="seleccionar(s)" :title="s.codigo + ' • ' + s.tipo">
+                <div>
+                  <span class="icon" x-html="iconoTipo(s.tipo)"></span>
+                  <span x-text="s.codigo"></span>
+                </div>
+                <small class="text-muted" x-text="s.tipo"></small>
+                <span class="corner" x-html="iconoEstado(s.estado)"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- Modal Detalle -->
+    <div class="modal fade" id="detalleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Detalle del puesto</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                                <div class="modal-body" x-show="seleccion">
+                    <div class="mb-2"><strong>Código: </strong><span x-text="seleccion?.codigo"></span></div>
+                    <div class="mb-2"><strong>Tipo: </strong><span x-text="seleccion?.tipo"></span></div>
+                    <div class="mb-2"><strong>Estado: </strong><span x-text="seleccion?.estado"></span></div>
+                    <template x-if="seleccion && seleccion.vehiculo">
+                        <div class="mb-2"><strong>Vehículo: </strong><span x-text="seleccion.vehiculo.placa"></span></div>
+                    </template>
+                                        <div class="border rounded p-2 mt-2">
+                                            <div class="small text-muted mb-2">Ocupar con placa</div>
+                                            <div class="row g-2 align-items-end">
+                                                <div class="col-6">
+                                                    <label class="form-label">Placa</label>
+                                                    <input type="text" class="form-control" x-model="placa">
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label">Tipo</label>
+                                                    <select class="form-select" x-model="tipoVehiculoId">
+                                                        <option value="1">CARRO</option>
+                                                        <option value="2">MOTO</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                                        <button class="btn btn-danger" @click="cambiarEstado('mantenimiento')">Mantenimiento</button>
+                                        <button class="btn btn-primary" @click="cambiarEstado('reservar')">Reservar</button>
+                                        <button class="btn btn-success" @click="ocupar()">Ocupar con placa</button>
+                                        <button class="btn btn-success" @click="cambiarEstado('liberar')">Liberar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function parkingMap(){
+  return {
+    spots: /*[[${spots}]]*/ [],
+    filtroTipo: '',
+    busqueda: '',
+    autoRefresh: true,
+    timer: null,
+        seleccion: null,
+        placa: '',
+        tipoVehiculoId: '1',
+        stomp: null,
+    init(){
+      this.layout();
+      this.refrescar();
+            this.timer = setInterval(()=>{ if(this.autoRefresh) this.refrescar(); }, 5000);
+            this.conectarWS();
+    },
+    layout(){
+      // Ajusta el número de columnas según el mayor índice de columna si lo necesitas
+    },
+    async refrescar(){
+      const res = await fetch('/api/spots');
+      const data = await res.json();
+      this.spots = data.sort((a,b)=> (a.fila - b.fila) || (a.columna - b.columna));
+    },
+    spotsFiltrados(){
+      return this.spots.filter(s => {
+        const okTipo = !this.filtroTipo || s.tipo === this.filtroTipo;
+        const okBusqueda = !this.busqueda || (s.codigo||'').toLowerCase().includes(this.busqueda.toLowerCase());
+        return okTipo && okBusqueda;
+      });
+    },
+    seleccionar(s){
+      this.seleccion = s;
+      const modal = new bootstrap.Modal(document.getElementById('detalleModal'));
+      modal.show();
+    },
+    async cambiarEstado(accion){
+      if(!this.seleccion) return;
+      await fetch(`/api/spots/${this.seleccion.id}/${accion}`, { method: 'POST' });
+      await this.refrescar();
+        },
+        async ocupar(){
+            if(!this.seleccion) return;
+            const body = { placa: this.placa, tipoVehiculoId: this.tipoVehiculoId };
+            const res = await fetch(`/api/spots/${this.seleccion.id}/ocupar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if(res.ok){ await this.refrescar(); }
+        },
+        iconoTipo(tipo){
+            const map = { CARRO:'🚗', MOTO:'🏍️', ELECTRICO:'⚡', GRANDE:'🚙', DISCAPACIDAD:'♿' };
+            return map[tipo]||'🅿️';
+        },
+        iconoEstado(est){
+            const map = { DISPONIBLE:'✅', OCUPADO:'⛔', RESERVADO:'🔒', MANTENIMIENTO:'🛠️' };
+            return map[est]||'';
+        },
+        conectarWS(){
+            try{
+                const sock = new SockJS('/ws');
+                this.stomp = Stomp.over(sock);
+                this.stomp.debug = () => {};
+                this.stomp.connect({}, () => {
+                    this.stomp.subscribe('/topic/spots', (msg) => {
+                        const s = JSON.parse(msg.body);
+                        const idx = this.spots.findIndex(x => x.id === s.id);
+                        if(idx >= 0) this.spots[idx] = s; else this.spots.push(s);
+                        this.spots = this.spots.sort((a,b)=> (a.fila - b.fila) || (a.columna - b.columna));
+                    });
+                });
+            } catch(e){ /* noop */ }
+        }
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Parqueadero</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <style>
+    body { background-color: #f7f8fa; }
+    .navbar-brand { font-weight: 700; letter-spacing: .3px; }
+    .card { box-shadow: 0 4px 10px rgba(0,0,0,.05); }
+    .table thead th { background-color: #f1f3f5; }
+    .badge-type { font-size: .85rem; }
+    .toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 1060; }
+  </style>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='12'>🅿️</text></svg>">
+  <meta name="color-scheme" content="light dark"/>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg bg-body-tertiary mb-4">
+  <div class="container">
+    <a class="navbar-brand" href="/">🅿️ Parqueadero</a>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+      <a class="btn btn-sm btn-outline-secondary" href="/index">Operación</a>
+  <a class="btn btn-sm btn-outline-secondary" href="/mapa">Mapa</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/tarifas">Tarifas</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/historial">Historial</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/reportes">Reportes</a>
+      <button id="themeBtn" class="btn btn-sm btn-outline-dark" type="button">Tema</button>
+    </div>
+  </div>
+  </nav>
+
+<main class="container">
+  <div class="toast-container">
+    <div th:if="${error}" class="toast align-items-center text-bg-danger show" role="alert">
+      <div class="d-flex">
+        <div class="toast-body" th:text="${error}">Error</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+    <div th:if="${success}" class="toast align-items-center text-bg-success show" role="alert">
+      <div class="d-flex">
+        <div class="toast-body" th:text="${success}">Ok</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Panel principal</h5>
+    <div class="d-flex gap-2">
+      <a href="/mapa" class="btn btn-outline-primary btn-sm">Ver mapa</a>
+      <a href="/historial" class="btn btn-outline-secondary btn-sm">Historial</a>
+      <a href="/dashboard" class="btn btn-outline-primary btn-sm">Refrescar</a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Registrar entrada -->
+    <div class="col-12 col-lg-4">
+      <div class="card">
+        <div class="card-header">Registrar entrada</div>
+        <div class="card-body">
+          <form th:action="@{/vehiculos/entrada}" method="post" th:object="${entrada}" class="needs-validation" novalidate>
+            <div class="mb-3">
+              <label for="placa" class="form-label">Placa</label>
+              <input id="placa" type="text" th:field="*{placa}" class="form-control" placeholder="ABC123" required maxlength="10">
+              <div class="form-text">Ingrese la placa del vehículo (máx. 10 caracteres).</div>
+              <div class="invalid-feedback">La placa es obligatoria.</div>
+            </div>
+            <div class="mb-3">
+              <label for="tipo" class="form-label">Tipo de vehículo</label>
+              <select id="tipo" th:field="*{tipoVehiculoId}" class="form-select" required>
+                <option value="" disabled selected>Seleccione...</option>
+                <option th:each="t : ${tipos}" th:value="${t.id}" th:text="${t.nombre}">tipo</option>
+              </select>
+              <div class="invalid-feedback">Seleccione un tipo de vehículo.</div>
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary">Ingresar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vehículos activos -->
+    <div class="col-12 col-lg-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Vehículos activos</span>
+          <div class="d-flex gap-3 small text-muted">
+            <span th:text="${#lists.size(vehiculos)} + ' en parqueadero'"></span>
+            <span th:if="${stats != null}" th:text="'Facturas: ' + ${stats.facturas}"></span>
+            <span th:if="${stats != null}" th:text="'Recaudo estimado: $' + ${#numbers.formatDecimal(stats.recaudoEstimado,0,'COMMA',0,'POINT')}"></span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="p-3 pb-0">
+            <input id="searchInput" class="form-control form-control-sm" placeholder="Buscar por placa…">
+          </div>
+          <div class="table-responsive">
+            <table id="vehiculosTable" class="table table-hover align-middle mb-0" x-data>
+              <thead>
+              <tr>
+                <th>Placa</th>
+                <th>Tipo</th>
+                <th>Entrada</th>
+                <th class="text-end">Acción</th>
+              </tr>
+              </thead>
+              <tbody id="vehiculosBody">
+              <!-- contenido dinámico -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+  // Validación Bootstrap cliente
+  (() => {
+    'use strict';
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.from(forms).forEach(form => {
+      form.addEventListener('submit', event => {
+        if (!form.checkValidity()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        form.classList.add('was-validated');
+      }, false);
+    });
+  })();
+
+  // Carga dinámica de vehículos activos + filtro por placa
+  const tbody = document.getElementById('vehiculosBody');
+  const searchInput = document.getElementById('searchInput');
+  let cache = [];
+
+  async function loadVehiculos() {
+    try {
+      const res = await fetch('/api/vehiculos/activos');
+      cache = await res.json();
+      render();
+    } catch (e) {
+      // Silenciar errores para no interrumpir la UX
+    }
+  }
+
+  function fmtDuration(isoEntry) {
+    try {
+      const start = new Date(isoEntry);
+      const now = new Date();
+      let mins = Math.max(0, Math.floor((now - start) / 60000));
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}h ${m}m`;
+    } catch { return ''; }
+  }
+
+  function render() {
+    const term = (searchInput?.value || '').trim().toUpperCase();
+    const data = term ? cache.filter(v => (v.placa || '').toUpperCase().includes(term)) : cache;
+    tbody.innerHTML = '';
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No hay vehículos.</td></tr>';
+      return;
+    }
+    for (const v of data) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="fw-semibold">${v.placa}</td>
+        <td><span class="badge text-bg-secondary badge-type">${v.tipoVehiculo?.nombre ?? 'N/A'}</span></td>
+        <td>
+          <div class="d-flex flex-column">
+            <span class="text-nowrap">${(v.fechaHoraEntrada ?? '').toString().replace('T',' ').slice(0,16)}</span>
+            <small class="text-muted" x-data="{t:0}" x-init="t=setInterval(()=>{$el.innerText='${fmtDuration(v.fechaHoraEntrada)}'},60000); $el.innerText='${fmtDuration(v.fechaHoraEntrada)}'" x-on:dispose="clearInterval(t)"></small>
+          </div>
+        </td>
+        <td class="text-end">
+          <form action="/vehiculos/${v.id}/salida" method="post" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-outline-success">Registrar salida y facturar</button>
+          </form>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  searchInput?.addEventListener('input', render);
+  loadVehiculos();
+  setInterval(loadVehiculos, 5000);
+
+  // Tema claro/oscuro sencillo
+  const themeBtn = document.getElementById('themeBtn');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const saved = localStorage.getItem('theme');
+  if ((saved === 'dark') || (!saved && prefersDark)) document.documentElement.setAttribute('data-bs-theme', 'dark');
+  themeBtn?.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    document.documentElement.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  });
+ </script>
+ <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+         integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+         crossorigin="anonymous"></script>
+</body>
+</html>

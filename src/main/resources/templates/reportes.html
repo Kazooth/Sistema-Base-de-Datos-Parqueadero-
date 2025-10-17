@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Reportes</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg bg-body-tertiary mb-4">
+  <div class="container">
+    <a class="navbar-brand" href="/">🅿️ Parqueadero</a>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+  <a class="btn btn-sm btn-outline-secondary" href="/">Inicio</a>
+  <a class="btn btn-sm btn-outline-secondary" href="/index">Operación</a>
+    <a class="btn btn-sm btn-outline-secondary" href="/mapa">Mapa</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/tarifas">Tarifas</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/historial">Historial</a>
+      <button id="themeBtn" class="btn btn-sm btn-outline-dark" type="button">Tema</button>
+    </div>
+  </div>
+ </nav>
+
+<main class="container">
+  <div class="card mb-3">
+    <div class="card-header">Filtros</div>
+    <div class="card-body">
+      <form class="row gy-2 gx-2 align-items-end" method="get" action="/reportes">
+        <div class="col-auto">
+          <label class="form-label">Desde</label>
+          <input class="form-control" type="date" name="desde" th:value="${desde}">
+        </div>
+        <div class="col-auto">
+          <label class="form-label">Hasta</label>
+          <input class="form-control" type="date" name="hasta" th:value="${hasta}">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">Buscar</button>
+        </div>
+        <div class="col-auto ms-auto">
+          <a class="btn btn-outline-secondary" th:href="@{'/reportes.csv'(desde=${desde}, hasta=${hasta})}">Descargar CSV</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="d-flex flex-wrap gap-3 align-items-center">
+        <span class="me-auto">Facturas</span>
+        <span class="badge text-bg-primary">Total $<span th:text="${#numbers.formatDecimal(total,0,'COMMA',0,'POINT')}">0</span></span>
+        <span class="badge text-bg-secondary">Cantidad <span th:text="${count}">0</span></span>
+        <span class="badge text-bg-info">Promedio $<span th:text="${#numbers.formatDecimal(promedio,0,'COMMA',0,'POINT')}">0</span></span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+          <tr>
+            <th>#</th>
+            <th>Fecha</th>
+            <th>Total</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="f : ${facturas}">
+            <td><a th:href="@{'/facturas/' + ${f.id}}" th:text="${f.id}">1</a></td>
+            <td th:text="${#temporals.format(f.fechaCreacion, 'yyyy-MM-dd HH:mm')}">-</td>
+            <td th:text="${#numbers.formatDecimal(f.total,0,'COMMA',0,'POINT')}">0</td>
+          </tr>
+          <tr th:if="${#lists.isEmpty(facturas)}">
+            <td colspan="3" class="text-center text-muted py-4">Sin resultados.</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-4">
+    <div class="col-12 col-lg-6">
+      <div class="card">
+        <div class="card-header">Recaudo por día</div>
+        <div class="card-body">
+          <canvas id="chartDia" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card">
+        <div class="card-header">Recaudo por tipo de vehículo</div>
+        <div class="card-body">
+          <canvas id="chartTipo" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-4">
+    <div class="col-12 col-lg-6">
+      <div class="card">
+        <div class="card-header">Recaudo por mes</div>
+        <div class="card-body">
+          <canvas id="chartMes" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card">
+        <div class="card-header">Top placas por recaudo</div>
+        <div class="card-body">
+          <canvas id="chartTopPlacas" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script th:inline="javascript">
+  const themeBtn = document.getElementById('themeBtn');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const saved = localStorage.getItem('theme');
+  if ((saved === 'dark') || (!saved && prefersDark)) document.documentElement.setAttribute('data-bs-theme', 'dark');
+  themeBtn?.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    document.documentElement.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  });
+
+  // Charts
+  const labelsDias = /*[[${labelsDias}]]*/ [];
+  const valoresDias = /*[[${valoresDias}]]*/ [];
+  const labelsTipos = /*[[${labelsTipos}]]*/ [];
+  const valoresTipos = /*[[${valoresTipos}]]*/ [];
+  const labelsMes = /*[[${labelsMes}]]*/ [];
+  const valoresMes = /*[[${valoresMes}]]*/ [];
+  const labelsTopPlacas = /*[[${labelsTopPlacas}]]*/ [];
+  const valoresTopPlacas = /*[[${valoresTopPlacas}]]*/ [];
+
+  function pesos(v) { try { return new Intl.NumberFormat('es-CO').format(v); } catch { return v; } }
+
+  const ctxDia = document.getElementById('chartDia');
+  if (ctxDia) new Chart(ctxDia, {
+    type: 'line',
+    data: {
+      labels: labelsDias,
+      datasets: [{ label: 'Recaudo', data: valoresDias, borderColor: '#0d6efd', fill: false }]
+    },
+    options: { responsive: true, plugins: { tooltip: { callbacks: { label: c => ' $' + pesos(c.parsed.y) } } } }
+  });
+
+  const ctxTipo = document.getElementById('chartTipo');
+  if (ctxTipo) new Chart(ctxTipo, {
+    type: 'bar',
+    data: {
+      labels: labelsTipos,
+      datasets: [{ label: 'Recaudo', data: valoresTipos, backgroundColor: '#198754' }]
+    },
+    options: { responsive: true, plugins: { tooltip: { callbacks: { label: c => ' $' + pesos(c.parsed.y) } } } }
+  });
+
+  const ctxMes = document.getElementById('chartMes');
+  if (ctxMes) new Chart(ctxMes, {
+    type: 'bar',
+    data: {
+      labels: labelsMes,
+      datasets: [{ label: 'Recaudo', data: valoresMes, backgroundColor: '#6f42c1' }]
+    },
+    options: { responsive: true, plugins: { tooltip: { callbacks: { label: c => ' $' + pesos(c.parsed.y) } } } }
+  });
+
+  const ctxTop = document.getElementById('chartTopPlacas');
+  if (ctxTop) new Chart(ctxTop, {
+    type: 'bar',
+    data: {
+      labels: labelsTopPlacas,
+      datasets: [{ label: 'Recaudo', data: valoresTopPlacas, backgroundColor: '#fd7e14' }]
+    },
+    options: { responsive: true, indexAxis: 'y', plugins: { tooltip: { callbacks: { label: c => ' $' + pesos(c.parsed.x) } } } }
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
