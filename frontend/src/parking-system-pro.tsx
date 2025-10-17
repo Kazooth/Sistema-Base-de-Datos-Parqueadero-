@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Car, Clock, DollarSign, TrendingUp, Users, BarChart3, Calendar, Search, Plus, CheckCircle2, AlertCircle, MapPin, FileText, Home } from 'lucide-react'
+import { Client, IMessage } from '@stomp/stompjs'
+import SockJS from 'sockjs-client'
 
 type TipoVehiculo = { id: number; nombre: string }
 type Vehiculo = { id: number; placa: string; fechaHoraEntrada: string; tipoVehiculo?: TipoVehiculo }
 type Spot = { id: number; codigo: string; tipo: 'MOTO'|'CARRO'|'ELECTRICO'|'GRANDE'|'DISCAPACIDAD'; estado: 'DISPONIBLE'|'OCUPADO'|'RESERVADO'|'MANTENIMIENTO'; vehiculo?: { placa: string } }
 
-export function ParkingSystemPro(){
-  const [activeView, setActiveView] = useState<'dashboard'|'entrada'|'vehiculos'|'mapa'|'reportes'>('dashboard')
+function ParkingSystemPro(){
+  const [activeView, setActiveView] = useState<'dashboard'|'entrada'|'vehiculos'|'mapa'|'reportes'|'historial'|'tarifas'>('dashboard')
   const [vehicles, setVehicles] = useState<Vehiculo[]>([])
   const [types, setTypes] = useState<TipoVehiculo[]>([])
   const [spots, setSpots] = useState<Spot[]>([])
+  const [selected, setSelected] = useState<Spot | null>(null)
   const [formData, setFormData] = useState<{ placa: string; tipoVehiculoId: string }>({ placa: '', tipoVehiculoId: '' })
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,6 +29,31 @@ export function ParkingSystemPro(){
     return () => clearInterval(t)
   }, [])
 
+  // WebSocket: live updates for spots
+  useEffect(() => {
+    const client = new Client({
+      webSocketFactory: () => new SockJS('/ws'),
+      reconnectDelay: 5000,
+      debug: () => {}
+    })
+    client.onConnect = () => {
+      client.subscribe('/topic/spots', (msg: IMessage) => {
+        try {
+          const updated: Spot = JSON.parse(msg.body)
+          setSpots(prev => {
+            const idx = prev.findIndex(s => s.id === updated.id)
+            if (idx === -1) return prev
+            const copy = prev.slice()
+            copy[idx] = { ...copy[idx], ...updated }
+            return copy
+          })
+        } catch (e) { console.error('WS parse error', e) }
+      })
+    }
+    client.activate()
+    return () => { try { client.deactivate() } catch {} }
+  }, [])
+
   async function loadData(){
     try {
       const [v, t, s] = await Promise.all([
@@ -35,6 +63,53 @@ export function ParkingSystemPro(){
       ])
       setVehicles(v); setTypes(t); setSpots(s)
     } catch(e){ console.error(e) }
+  }
+
+  async function spotAction(id: number, action: 'reservar'|'mantenimiento'|'liberar'){
+    try {
+      const res = await fetch(`/api/spots/${id}/${action}`, { method: 'POST' })
+      if (res.ok) {
+        // Try to use returned spot if present
+        try {
+          const updated: Spot = await res.json()
+          setSpots(prev => {
+            const idx = prev.findIndex(s => s.id === updated.id)
+            if (idx === -1) return prev
+            const copy = prev.slice(); copy[idx] = { ...copy[idx], ...updated }; return copy
+          })
+        } catch {
+          await loadData()
+        }
+      } else {
+        alert('No se pudo ejecutar la acción del espacio')
+      }
+    } catch (e) { console.error(e) }
+  }
+
+  async function ocupar(id: number){
+    if (!formData.placa || !formData.tipoVehiculoId) { alert('Placa y tipo de vehículo son requeridos'); return }
+    setLoading(true)
+    try {
+      const payload = { placa: formData.placa, tipoVehiculoId: Number(formData.tipoVehiculoId) }
+      const res = await fetch(`/api/spots/${id}/ocupar`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
+      if (res.ok) {
+        // actualizar UI
+        try {
+          const updated: Spot = await res.json()
+          setSpots(prev => {
+            const idx = prev.findIndex(s => s.id === updated.id)
+            if (idx === -1) return prev
+            const copy = prev.slice(); copy[idx] = { ...copy[idx], ...updated }; return copy
+          })
+        } catch { await loadData() }
+        setSelected(null)
+        setFormData({ placa: '', tipoVehiculoId: '' })
+      } else {
+        const msg = await res.text()
+        alert(`Error al ocupar: ${msg}`)
+      }
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
   async function handleSubmit(){
@@ -95,6 +170,8 @@ export function ParkingSystemPro(){
                 {id:'entrada',label:'Nueva Entrada',icon:Plus},
                 {id:'vehiculos',label:'Vehículos Activos',icon:Car},
                 {id:'mapa',label:'Mapa de Espacios',icon:MapPin},
+                {id:'historial',label:'Historial',icon:FileText},
+                {id:'tarifas',label:'Tarifas',icon:DollarSign},
                 {id:'reportes',label:'Reportes',icon:BarChart3}
               ] as const
             ).map(({id,label,icon:Icon}) => (
@@ -202,10 +279,75 @@ export function ParkingSystemPro(){
             <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
               <div className="flex items-center justify-between mb-6"><h2 className="text-2xl font-bold text-gray-900 flex items-center"><MapPin className="mr-3 text-blue-600" size={28}/>Mapa de Espacios</h2></div>
               <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-                {spots.map(s => (
-                  <div key={s.id} className={`relative p-4 rounded-xl border-2 transition-all hover:scale-105 cursor-pointer ${spotCls(s.estado)}`} title={`${s.codigo} - ${s.tipo} - ${s.estado}`}>
+                 {spots.map(s => (
+                  <div key={s.id} onClick={()=>{ setSelected(s); setFormData({ placa: s.vehiculo?.placa ?? '', tipoVehiculoId: '' }) }} className={`relative p-4 rounded-xl border-2 transition-all hover:scale-105 cursor-pointer ${spotCls(s.estado)}`} title={`${s.codigo} - ${s.tipo} - ${s.estado}`}>
                     <div className="text-center"><div className="text-2xl mb-1">{spotIcon(s.tipo)}</div><div className="font-bold text-sm">{s.codigo}</div>{s.vehiculo && <div className="text-xs mt-1 font-semibold">{s.vehiculo.placa}</div>}</div>
                   </div>))}
+              </div>
+              {selected && (
+                <div className="mt-6 bg-gray-50 rounded-2xl border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="text-2xl">{spotIcon(selected.tipo)}</div>
+                      <div>
+                        <div className="font-bold text-gray-900">Espacio {selected.codigo}</div>
+                        <div className="text-sm text-gray-600">{selected.tipo} · {selected.estado}{selected.vehiculo? ` · ${selected.vehiculo.placa}`:''}</div>
+                      </div>
+                    </div>
+                    <button onClick={()=>setSelected(null)} className="text-sm text-gray-500 hover:text-blue-600">Cerrar</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                    <button onClick={()=>spotAction(selected.id,'reservar')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Reservar</button>
+                    <button onClick={()=>spotAction(selected.id,'mantenimiento')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Mantenimiento</button>
+                    <button onClick={()=>spotAction(selected.id,'liberar')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Liberar</button>
+                    <button onClick={()=>{ /* focus the ocupar form */ const el=document.getElementById('ocuparPlaca'); el?.focus() }} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Ocupar con placa</button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Placa</label>
+                      <input id="ocuparPlaca" value={formData.placa} onChange={e=>setFormData({...formData, placa:e.target.value.toUpperCase()})} className="w-full px-3 py-2 border rounded-lg" placeholder="ABC123"/>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Tipo Vehículo</label>
+                      <select value={formData.tipoVehiculoId} onChange={e=>setFormData({...formData, tipoVehiculoId:e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Seleccionar...</option>
+                        {types.map(t=> <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={()=>ocupar(selected.id)} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">{loading? 'Ocupando...' : 'Ocupar'}</button>
+                      <button onClick={()=>setSelected(null)} className="flex-1 border border-gray-200 px-4 py-2 rounded-lg">Cancelar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeView==='historial' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 flex items-center"><FileText className="mr-3 text-blue-600" size={28}/>Historial</h2>
+                <a href="/historial" className="text-sm text-blue-600 hover:underline" target="_blank" rel="noreferrer">Abrir en nueva pestaña</a>
+              </div>
+              <div className="rounded-xl border border-gray-200 overflow-hidden" style={{height: '80vh'}}>
+                <iframe title="Historial" src="/historial" className="w-full h-full bg-white"/>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeView==='tarifas' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 flex items-center"><DollarSign className="mr-3 text-blue-600" size={28}/>Tarifas</h2>
+                <a href="/tarifas" className="text-sm text-blue-600 hover:underline" target="_blank" rel="noreferrer">Abrir en nueva pestaña</a>
+              </div>
+              <div className="rounded-xl border border-gray-200 overflow-hidden" style={{height: '80vh'}}>
+                <iframe title="Tarifas" src="/tarifas" className="w-full h-full bg-white"/>
               </div>
             </div>
           </div>
@@ -230,7 +372,13 @@ export function ParkingSystemPro(){
                   </div>
                 ))}
               </div>
-              <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-dashed border-blue-300"><BarChart3 className="mx-auto text-blue-400 mb-4" size={64}/><h3 className="text-xl font-bold text-gray-900 mb-2">Gráficos Detallados</h3><p className="text-gray-600 mb-4">Accede al sistema completo para ver reportes avanzados</p><a href="/reportes" className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all"><FileText size={20}/><span>Ver Reportes Completos</span></a></div>
+              <div className="rounded-2xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <div className="font-semibold text-gray-800">Reportes en vivo</div>
+                  <a href="/reportes" className="text-sm text-blue-600 hover:underline" target="_blank" rel="noreferrer">Abrir en nueva pestaña</a>
+                </div>
+                <iframe title="Reportes" src="/reportes" className="w-full" style={{height:'80vh'}}/>
+              </div>
             </div>
           </div>
         )}
@@ -247,3 +395,4 @@ export function ParkingSystemPro(){
     </div>
   )
 }
+export default ParkingSystemPro
