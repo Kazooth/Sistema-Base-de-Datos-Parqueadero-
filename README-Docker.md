@@ -118,5 +118,39 @@ Problemas comunes
 - Si la app intenta conectarse a la BD antes de que ésta esté lista verás errores JDBC. El `wait-for.sh` y el `healthcheck` minimizan este problema; revisa `docker compose logs db` para ver la inicialización de MySQL.
 - Si los assets del frontend no cargan desde `/`, asegúrate de que `frontend/vite.config.ts` tiene `base: '/app/'` y que reconstruiste la imagen.
 
-¿Quieres que añada a este README instrucciones para desplegar en producción (ej. variables extra, optimizaciones, uso de Docker Swarm/Kubernetes) o prefieres que añada un apartado de troubleshooting con comandos concretos que ya te sean útiles?
+Problemas comunes
+- Si la app intenta conectarse a la BD antes de que ésta esté lista verás errores JDBC. El `wait-for.sh` y el `healthcheck` minimizan este problema; revisa `docker compose logs db` para ver la inicialización de MySQL.
+- Si los assets del frontend no cargan desde `/`, asegúrate de que `frontend/vite.config.ts` tiene `base: '/app/'` y que reconstruiste la imagen.
+
+**Troubleshooting (comandos útiles)**
+
+- Ver logs del DB y del app:
+
+```bash
+docker compose logs --tail 200 db
+docker compose logs --tail 200 app
+```
+
+- Comprobar inicio y healthcheck del DB:
+
+```bash
+docker inspect --format='{{json .State.Health}}' $(docker ps -qf "name=sistema-base-de-datos-parqueadero--db-1") | jq
+```
+
+- Forzar reconstrucción y reinicio (limpio):
+
+```bash
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
+```
+
+- Si las pruebas en CI fallan por problemas de conexión a BD: comprobación rápida local
+
+```bash
+# Ejecuta los tests de maven usando H2 en memoria para aislar dependencias
+SPRING_DATASOURCE_URL=jdbc:h2:mem:testdb mvn test
+```
+
+¿Quieres que añada a este README instrucciones para desplegar en producción (ej. variables extra, optimizaciones, uso de Docker Swarm/Kubernetes)?
 ```
