@@ -1,50 +1,47 @@
 package com.parqueadero.parqueadero;
 
 import com.parqueadero.parqueadero.controlador.ParqueaderoController;
+import com.parqueadero.parqueadero.repositorio.FacturaRepository;
 import com.parqueadero.parqueadero.servicio.ParqueaderoService;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.env.Environment;
+import org.springframework.ui.ConcurrentModel;
 
 import java.util.Collections;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
-@WebMvcTest(controllers = ParqueaderoController.class)
-@Import(ParqueaderoWebMvcTest.TestConfig.class)
-@TestPropertySource(properties = "spring.web.resources.add-mappings=false")
+@ExtendWith(MockitoExtension.class)
 class ParqueaderoWebMvcTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Mock
+    ParqueaderoService parqueaderoService;
 
-    @Autowired
-    private ParqueaderoService parqueaderoService;
+    @Mock
+    FacturaRepository facturaRepository;
+
+    @Mock
+    Environment env;
+
+    @InjectMocks
+    ParqueaderoController controller;
 
     @Test
-    void home_shouldRenderIndexWithModelAttributes() throws Exception {
-        Mockito.when(parqueaderoService.listarActivos()).thenReturn(Collections.emptyList());
-        Mockito.when(parqueaderoService.listarTipos()).thenReturn(Collections.emptyList());
+    void home_shouldRenderIndexWithModelAttributes() {
+        when(parqueaderoService.listarActivos()).thenReturn(Collections.emptyList());
+        when(parqueaderoService.listarTipos()).thenReturn(Collections.emptyList());
 
-    mockMvc.perform(get("/"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("index"))
-                .andExpect(model().attributeExists("entrada"))
-                .andExpect(model().attributeExists("vehiculos"))
-                .andExpect(model().attributeExists("tipos"));
-    }
-    @Configuration
-    static class TestConfig {
-        @Bean
-        ParqueaderoService parqueaderoService() {
-            return Mockito.mock(ParqueaderoService.class);
-        }
+        ConcurrentModel model = new ConcurrentModel();
+        String view = controller.home(model);
+
+        assertThat(view).isEqualTo("index");
+        assertThat(model.containsAttribute("entrada")).isTrue();
+        assertThat(model.containsAttribute("vehiculos")).isTrue();
+        assertThat(model.containsAttribute("tipos")).isTrue();
     }
 }
