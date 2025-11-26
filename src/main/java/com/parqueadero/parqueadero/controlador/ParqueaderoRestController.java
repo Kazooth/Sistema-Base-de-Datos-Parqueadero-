@@ -6,6 +6,8 @@ import com.parqueadero.parqueadero.modelo.TipoVehiculo;
 import com.parqueadero.parqueadero.modelo.Vehiculo;
 import com.parqueadero.parqueadero.servicio.ParqueaderoServiceApi;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -20,7 +22,7 @@ public class ParqueaderoRestController {
     }
 
     @GetMapping("/vehiculos/activos")
-    public List<Vehiculo> activos() { return service.listarActivos(); }
+    public Page<Vehiculo> activos(Pageable pageable) { return service.listarActivos(pageable); }
 
     @GetMapping("/tipos")
     public List<TipoVehiculo> tipos() { return service.listarTipos(); }

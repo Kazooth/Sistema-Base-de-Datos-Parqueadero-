@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Car, Clock, DollarSign, TrendingUp, Users, BarChart3, Calendar, Search, Plus, CheckCircle2, AlertCircle, MapPin, FileText, Home } from 'lucide-react'
 import { Client, IMessage } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
+import Header from './components/Header'
+import VehiclesList from './components/VehiclesList'
+import MapPanel from './components/MapPanel'
 
 type TipoVehiculo = { id: number; nombre: string }
 type Vehiculo = { id: number; placa: string; fechaHoraEntrada: string; tipoVehiculo?: TipoVehiculo }
@@ -16,18 +19,23 @@ function ParkingSystemPro(){
   const [formData, setFormData] = useState<{ placa: string; tipoVehiculoId: string }>({ placa: '', tipoVehiculoId: '' })
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
+  // Pagination (client-side): page index starts at 1
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [totalItems, setTotalItems] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
 
   const stats = useMemo(() => {
     const ocupados = spots.filter((s: Spot) => s.estado === 'OCUPADO').length
     const disponibles = spots.filter((s: Spot) => s.estado === 'DISPONIBLE').length
-    return { activos: vehicles.length, ocupados, disponibles, total: spots.length, ingresos: vehicles.length * 3500 }
-  }, [vehicles, spots])
+    return { activos: totalItems, ocupados, disponibles, total: spots.length, ingresos: totalItems * 3500 }
+  }, [totalItems, spots])
 
   useEffect(() => {
     loadData()
     const t = setInterval(loadData, 5000)
     return () => clearInterval(t)
-  }, [])
+  }, [page, pageSize])
 
   // WebSocket: live updates for spots
   useEffect(() => {
@@ -56,12 +64,28 @@ function ParkingSystemPro(){
 
   async function loadData(){
     try {
-      const [v, t, s] = await Promise.all([
-        fetch('/api/vehiculos/activos').then(r=>r.json()),
-        fetch('/api/tipos').then(r=>r.json()),
-        fetch('/api/spots').then(r=>r.json()),
+      const [vehiclesRes, typesRes, spotsRes] = await Promise.all([
+        fetch(`/api/vehiculos/activos?page=${Math.max(0, page-1)}&size=${pageSize}`),
+        fetch('/api/tipos'),
+        fetch('/api/spots')
       ])
-      setVehicles(v); setTypes(t); setSpots(s)
+
+      const vehiclesData = await vehiclesRes.json()
+      const typesData = await typesRes.json()
+      const spotsData = await spotsRes.json()
+
+      setVehicles(Array.isArray(vehiclesData.content) ? vehiclesData.content : vehiclesData)
+      setTypes(typesData)
+      setSpots(spotsData)
+
+      // If server returned a Page object, use its metadata
+      if (vehiclesData && typeof vehiclesData.totalElements === 'number') {
+        setTotalItems(vehiclesData.totalElements)
+        setTotalPages(vehiclesData.totalPages || 1)
+      } else {
+        setTotalItems(Array.isArray(vehiclesData) ? vehiclesData.length : 0)
+        setTotalPages(Math.max(1, Math.ceil((Array.isArray(vehiclesData) ? vehiclesData.length : 0) / pageSize)))
+      }
     } catch(e){ console.error(e) }
   }
 
@@ -131,6 +155,9 @@ function ParkingSystemPro(){
   }
 
   const filtered = vehicles.filter((v: Vehiculo) => v.placa?.toLowerCase().includes(searchTerm.toLowerCase()))
+  // If searchTerm is active, perform client-side filter on current page items
+  const paginated = searchTerm ? filtered : vehicles
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages])
   const spotCls = (e: Spot['estado']) => ({
     DISPONIBLE: 'bg-green-100 text-green-800 border-green-300',
     OCUPADO: 'bg-red-100 text-red-800 border-red-300',
@@ -141,48 +168,7 @@ function ParkingSystemPro(){
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur opacity-75"></div>
-                <div className="relative bg-gradient-to-r from-blue-600 to-indigo-600 p-3 rounded-2xl">
-                  <Car className="text-white" size={32} />
-                </div>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">ParqueoSmart Pro</h1>
-                <p className="text-sm text-gray-500">Sistema de Gestión Avanzada</p>
-              </div>
-            </div>
-            <div className="hidden md:flex items-center space-x-2 bg-gray-100 rounded-xl px-3 py-2">
-              <Clock className="text-gray-500" size={18} />
-              <span className="text-sm font-medium text-gray-700">{new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>
-              <Calendar className="text-gray-500 ml-3" size={18} />
-              <span className="text-sm font-medium text-gray-700">{new Date().toLocaleDateString('es-CO')}</span>
-            </div>
-          </div>
-          <div className="flex space-x-1 pb-4 overflow-x-auto">
-            {(
-              [
-                {id:'dashboard',label:'Dashboard',icon:Home},
-                {id:'entrada',label:'Nueva Entrada',icon:Plus},
-                {id:'vehiculos',label:'Vehículos Activos',icon:Car},
-                {id:'mapa',label:'Mapa de Espacios',icon:MapPin},
-                {id:'historial',label:'Historial',icon:FileText},
-                {id:'tarifas',label:'Tarifas',icon:DollarSign},
-                {id:'reportes',label:'Reportes',icon:BarChart3}
-              ] as const
-            ).map(({id,label,icon:Icon}) => (
-              <button key={id} onClick={()=>setActiveView(id as any)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-all duration-200 whitespace-nowrap ${activeView===id? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/50':'text-gray-600 hover:bg-gray-100'}`}>
-                <Icon size={18}/><span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
+      <Header activeView={activeView} setActiveView={setActiveView} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeView==='dashboard' && (
@@ -237,92 +223,11 @@ function ParkingSystemPro(){
         )}
 
         {activeView==='vehiculos' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 flex items-center"><Car className="mr-3 text-blue-600" size={28}/>Vehículos en el Parqueadero</h2>
-                <div className="flex items-center space-x-2 bg-gray-100 rounded-xl px-4 py-2"><Users className="text-gray-500" size={20}/><span className="font-bold text-gray-900">{vehicles.length}</span></div>
-              </div>
-              <div className="mb-6">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
-                  <input value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="Buscar por placa..." className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"/>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead><tr className="border-b-2 border-gray-200 bg-gray-50"><th className="text-left py-4 px-4">Placa</th><th className="text-left py-4 px-4">Tipo</th><th className="text-left py-4 px-4">Hora Entrada</th><th className="text-left py-4 px-4">Tiempo</th><th className="text-right py-4 px-4">Acciones</th></tr></thead>
-                  <tbody>
-                    {filtered.map(v=>{
-                      const entrada = new Date(v.fechaHoraEntrada)
-                      const mins = Math.max(0, Math.floor((Date.now() - entrada.getTime())/60000))
-                      const h = Math.floor(mins/60), m = mins%60
-                      return (
-                        <tr key={v.id} className="border-b border-gray-100 hover:bg-blue-50">
-                          <td className="py-4 px-4"><div className="flex items-center space-x-3"><div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center"><Car className="text-white" size={20}/></div><span className="font-bold text-gray-900 text-lg">{v.placa}</span></div></td>
-                          <td className="py-4 px-4"><span className="px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">{v.tipoVehiculo?.nombre}</span></td>
-                          <td className="py-4 px-4 text-gray-600">{entrada.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</td>
-                          <td className="py-4 px-4"><div className="flex items-center space-x-2"><Clock className="text-gray-400" size={16}/><span className="font-semibold text-gray-700">{h}h {m}m</span></div></td>
-                          <td className="py-4 px-4 text-right"><button onClick={()=>handleExit(v.id)} className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg font-semibold">Salida</button></td>
-                        </tr>)
-                    })}
-                  </tbody>
-                </table>
-                {filtered.length===0 && <div className="text-center py-16"><Car className="mx-auto text-gray-300 mb-4" size={64}/><p className="text-gray-500 text-lg font-medium">No hay vehículos en el parqueadero</p></div>}
-              </div>
-            </div>
-          </div>
+          <VehiclesList vehicles={vehicles} totalItems={totalItems} page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} searchTerm={searchTerm} setSearchTerm={setSearchTerm} handleExit={handleExit} loading={loading} totalPages={totalPages} />
         )}
 
         {activeView==='mapa' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <div className="flex items-center justify-between mb-6"><h2 className="text-2xl font-bold text-gray-900 flex items-center"><MapPin className="mr-3 text-blue-600" size={28}/>Mapa de Espacios</h2></div>
-              <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-                 {spots.map(s => (
-                  <div key={s.id} onClick={()=>{ setSelected(s); setFormData({ placa: s.vehiculo?.placa ?? '', tipoVehiculoId: '' }) }} className={`relative p-4 rounded-xl border-2 transition-all hover:scale-105 cursor-pointer ${spotCls(s.estado)}`} title={`${s.codigo} - ${s.tipo} - ${s.estado}`}>
-                    <div className="text-center"><div className="text-2xl mb-1">{spotIcon(s.tipo)}</div><div className="font-bold text-sm">{s.codigo}</div>{s.vehiculo && <div className="text-xs mt-1 font-semibold">{s.vehiculo.placa}</div>}</div>
-                  </div>))}
-              </div>
-              {selected && (
-                <div className="mt-6 bg-gray-50 rounded-2xl border border-gray-200 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl">{spotIcon(selected.tipo)}</div>
-                      <div>
-                        <div className="font-bold text-gray-900">Espacio {selected.codigo}</div>
-                        <div className="text-sm text-gray-600">{selected.tipo} · {selected.estado}{selected.vehiculo? ` · ${selected.vehiculo.placa}`:''}</div>
-                      </div>
-                    </div>
-                    <button onClick={()=>setSelected(null)} className="text-sm text-gray-500 hover:text-blue-600">Cerrar</button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                    <button onClick={()=>spotAction(selected.id,'reservar')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Reservar</button>
-                    <button onClick={()=>spotAction(selected.id,'mantenimiento')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Mantenimiento</button>
-                    <button onClick={()=>spotAction(selected.id,'liberar')} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Liberar</button>
-                    <button onClick={()=>{ /* focus the ocupar form */ const el=document.getElementById('ocuparPlaca'); el?.focus() }} className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-blue-50">Ocupar con placa</button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Placa</label>
-                      <input id="ocuparPlaca" value={formData.placa} onChange={e=>setFormData({...formData, placa:e.target.value.toUpperCase()})} className="w-full px-3 py-2 border rounded-lg" placeholder="ABC123"/>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Tipo Vehículo</label>
-                      <select value={formData.tipoVehiculoId} onChange={e=>setFormData({...formData, tipoVehiculoId:e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                        <option value="">Seleccionar...</option>
-                        {types.map(t=> <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={()=>ocupar(selected.id)} disabled={loading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">{loading? 'Ocupando...' : 'Ocupar'}</button>
-                      <button onClick={()=>setSelected(null)} className="flex-1 border border-gray-200 px-4 py-2 rounded-lg">Cancelar</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <MapPanel spots={spots} selected={selected} setSelected={setSelected} formData={formData} setFormData={setFormData} types={types} ocupar={ocupar} spotAction={spotAction} loading={loading} />
         )}
 
         {activeView==='historial' && (
@@ -360,7 +265,7 @@ function ParkingSystemPro(){
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 {(
                   [
-                    {label:'Total Vehículos Hoy',value:vehicles.length,icon:Car},
+                    {label:'Total Vehículos Hoy',value:totalItems,icon:Car},
                     {label:'Tiempo Promedio',value:'2.5h',icon:Clock},
                     {label:'Ingresos del Día',value:`$${(stats.ingresos).toLocaleString()}`,icon:DollarSign}
                   ] as const

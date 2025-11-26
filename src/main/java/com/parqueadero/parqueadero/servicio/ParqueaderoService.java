@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 public class ParqueaderoService implements ParqueaderoServiceApi {
@@ -34,6 +36,11 @@ public class ParqueaderoService implements ParqueaderoServiceApi {
     @Override
     public List<Vehiculo> listarActivos() {
         return vehiculoRepo.findByFechaHoraSalidaIsNullOrderByFechaHoraEntradaAsc();
+    }
+
+    @Override
+    public Page<Vehiculo> listarActivos(Pageable pageable) {
+        return vehiculoRepo.findByFechaHoraSalidaIsNullOrderByFechaHoraEntradaAsc(pageable);
     }
 
     @Override

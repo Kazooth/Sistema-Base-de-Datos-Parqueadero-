@@ -37,7 +37,8 @@ public class ParqueaderoController {
         if (spaDevUrl != null && !spaDevUrl.isBlank()) {
             return "redirect:" + spaDevUrl;
         }
-        return "forward:/app/index.html";
+        // Use external redirect so browser requests the SPA assets directly.
+        return "redirect:/app/index.html";
     }
 
     // Antiguo home de Thymeleaf disponible en /home

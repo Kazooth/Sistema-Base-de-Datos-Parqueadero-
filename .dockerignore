@@ -1,0 +1,10 @@
+target
+.mvn
+.git
+frontend/node_modules
+node_modules
+*.iml
+.idea
+.vscode
+.DS_Store
+**/target
